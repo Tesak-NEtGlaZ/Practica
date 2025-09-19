@@ -1,1 +1,86 @@
-print ('Hello world!')
+import sys
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QLabel, QLineEdit, QPushButton, QRadioButton,
+    QGridLayout
+)
+from PyQt6.QtCore import Qt
+
+class MortgageCalculator(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Ипотечный калькулятор")
+        self.setFixedSize(500, 300)
+        self.init_ui()
+
+    def init_ui(self):
+        self.amount_input = QLineEdit()
+        self.term_input = QLineEdit()
+        self.rate_input = QLineEdit()
+
+        self.annuity_radio = QRadioButton("Аннуитетный")
+        self.diff_radio = QRadioButton("Дифференцированный")
+        self.annuity_radio.setChecked(True)
+
+        self.monthly_payment = QLineEdit()
+        self.total_overpay = QLineEdit()
+        self.total_payment = QLineEdit()
+        for field in [self.monthly_payment, self.total_overpay, self.total_payment]:
+            field.setReadOnly(True)
+
+        self.calc_btn = QPushButton("Рассчитать")
+        self.calc_btn.clicked.connect(self.calculate)
+
+        layout = QGridLayout()
+        layout.addWidget(QLabel("Сумма кредита"), 0, 0)
+        layout.addWidget(self.amount_input, 0, 1)
+        layout.addWidget(QLabel("Срок кредита (лет)"), 1, 0)
+        layout.addWidget(self.term_input, 1, 1)
+        layout.addWidget(QLabel("Процентная ставка (%)"), 2, 0)
+        layout.addWidget(self.rate_input, 2, 1)
+        layout.addWidget(QLabel("Тип платежа"), 3, 0)
+        layout.addWidget(self.annuity_radio, 3, 1)
+        layout.addWidget(self.diff_radio, 4, 1)
+        layout.addWidget(self.calc_btn, 5, 0, 1, 2)
+        layout.addWidget(QLabel("Ежемесячный платёж"), 0, 2)
+        layout.addWidget(self.monthly_payment, 0, 3)
+        layout.addWidget(QLabel("Общая переплата"), 1, 2)
+        layout.addWidget(self.total_overpay, 1, 3)
+        layout.addWidget(QLabel("Общая сумма выплат"), 2, 2)
+        layout.addWidget(self.total_payment, 2, 3)
+
+        self.setLayout(layout)
+
+    def calculate(self):
+        try:
+            principal = float(self.amount_input.text())
+            years = float(self.term_input.text())
+            rate = float(self.rate_input.text()) / 100
+            months = int(years * 12)
+
+            if self.annuity_radio.isChecked():
+                monthly_rate = rate / 12
+                payment = principal * (monthly_rate * (1 + monthly_rate) ** months) / \
+                          ((1 + monthly_rate) ** months - 1)
+                total = payment * months
+            else:
+                payments = []
+                for m in range(months):
+                    principal_part = principal / months
+                    interest_part = (principal - principal * m / months) * rate / 12
+                    payments.append(principal_part + interest_part)
+                total = sum(payments)
+                payment = payments[0]
+
+            overpay = total - principal
+            self.monthly_payment.setText(f"{payment:,.2f}")
+            self.total_overpay.setText(f"{overpay:,.2f}")
+            self.total_payment.setText(f"{total:,.2f}")
+
+        except ValueError:
+            self.monthly_payment.setText("Ошибка ввода")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MortgageCalculator()
+    window.show()
+    sys.exit(app.exec())
