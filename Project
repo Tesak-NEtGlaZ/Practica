@@ -1,16 +1,21 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QRadioButton,
-    QGridLayout, QHBoxLayout
+    QGridLayout, QHBoxLayout, QFileDialog, QMessageBox
 )
 from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtCore import Qt
+import os
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 
 class MortgageCalculator(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Ипотечный калькулятор")
-        self.setFixedSize(600, 350)
+        self.setFixedSize(600, 400)
         self.dark_mode = False
 
         self.init_ui()
@@ -32,10 +37,13 @@ class MortgageCalculator(QWidget):
             field.setReadOnly(True)
 
         self.calc_btn = QPushButton("Рассчитать")
+        self.pdf_btn = QPushButton("Сохранить в PDF")
         self.theme_btn = QPushButton("🌙")
         self.theme_btn.setFixedSize(30, 30)
+        
         self.theme_btn.clicked.connect(self.toggle_theme)
         self.calc_btn.clicked.connect(self.calculate)
+        self.pdf_btn.clicked.connect(self.save_to_pdf)
 
         top_bar = QHBoxLayout()
         top_bar.addStretch()
@@ -53,7 +61,8 @@ class MortgageCalculator(QWidget):
         layout.addWidget(QLabel("Тип платежа"), 4, 0)
         layout.addWidget(self.annuity_radio, 4, 1)
         layout.addWidget(self.diff_radio, 5, 1)
-        layout.addWidget(self.calc_btn, 6, 0, 1, 2)
+        layout.addWidget(self.calc_btn, 6, 0)
+        layout.addWidget(self.pdf_btn, 6, 1)
         layout.addWidget(QLabel("Ежемесячный платёж"), 1, 2)
         layout.addWidget(self.monthly_payment, 1, 3)
         layout.addWidget(QLabel("Общая переплата"), 2, 2)
@@ -93,6 +102,67 @@ class MortgageCalculator(QWidget):
             self.monthly_payment.setText("Ошибка ввода")
             self.total_overpay.clear()
             self.total_payment.clear()
+
+    def save_to_pdf(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить как PDF", "", "PDF Files (*.pdf)"
+        )
+        if not filename:
+            return
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
+
+        # Поиск шрифта
+        font_path = self.find_font()
+        if not font_path:
+            QMessageBox.critical(self, "Ошибка", "Не найден TTF-шрифт для кириллицы")
+            return
+
+        try:
+            pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
+            c = canvas.Canvas(filename, pagesize=A4)
+            width, height = A4
+
+            c.setFont("DejaVuSans", 16)
+            c.drawString(100, height - 50, "Результаты расчёта ипотеки")
+
+            c.setFont("DejaVuSans", 12)
+            y = height - 90
+            line_height = 18
+
+            fields = [
+                ("Сумма кредита", self.amount_input.text()),
+                ("Срок кредита (лет)", self.term_input.text()),
+                ("Процентная ставка (%)", self.rate_input.text()),
+                ("Тип платежа", "Аннуитетный" if self.annuity_radio.isChecked() else "Дифференцированный"),
+                ("Ежемесячный платёж", self.monthly_payment.text()),
+                ("Общая переплата", self.total_overpay.text()),
+                ("Общая сумма выплат", self.total_payment.text()),
+            ]
+
+            for label, value in fields:
+                c.drawString(100, y, f"{label}: {value}")
+                y -= line_height
+
+            c.save()
+            QMessageBox.information(self, "Успех", f"PDF сохранён:\n{filename}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF:\n{e}")
+
+    def find_font(self):
+        base = getattr(sys, '_MEIPASS', os.path.dirname(__file__))
+        candidates = [
+            os.path.join(base, "DejaVuSans.ttf"),
+            os.path.join(base, "fonts", "DejaVuSans.ttf"),
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",
+        ]
+
+        for p in candidates:
+            if p and os.path.exists(p):
+                return p
+        return None
 
     def toggle_theme(self):
         if self.dark_mode:
