@@ -1,16 +1,20 @@
 import sys
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QRadioButton,
-    QGridLayout
+    QGridLayout, QHBoxLayout
 )
+from PyQt6.QtGui import QPalette, QColor
 from PyQt6.QtCore import Qt
 
 class MortgageCalculator(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Ипотечный калькулятор")
-        self.setFixedSize(500, 300)
+        self.setFixedSize(600, 350)
+        self.dark_mode = False
+
         self.init_ui()
+        self.apply_light_theme()
 
     def init_ui(self):
         self.amount_input = QLineEdit()
@@ -28,25 +32,34 @@ class MortgageCalculator(QWidget):
             field.setReadOnly(True)
 
         self.calc_btn = QPushButton("Рассчитать")
+        self.theme_btn = QPushButton("🌙")
+        self.theme_btn.setFixedSize(30, 30)
+        self.theme_btn.clicked.connect(self.toggle_theme)
         self.calc_btn.clicked.connect(self.calculate)
 
+        top_bar = QHBoxLayout()
+        top_bar.addStretch()
+        top_bar.addWidget(self.theme_btn)
+
         layout = QGridLayout()
-        layout.addWidget(QLabel("Сумма кредита"), 0, 0)
-        layout.addWidget(self.amount_input, 0, 1)
-        layout.addWidget(QLabel("Срок кредита (лет)"), 1, 0)
-        layout.addWidget(self.term_input, 1, 1)
-        layout.addWidget(QLabel("Процентная ставка (%)"), 2, 0)
-        layout.addWidget(self.rate_input, 2, 1)
-        layout.addWidget(QLabel("Тип платежа"), 3, 0)
-        layout.addWidget(self.annuity_radio, 3, 1)
-        layout.addWidget(self.diff_radio, 4, 1)
-        layout.addWidget(self.calc_btn, 5, 0, 1, 2)
-        layout.addWidget(QLabel("Ежемесячный платёж"), 0, 2)
-        layout.addWidget(self.monthly_payment, 0, 3)
-        layout.addWidget(QLabel("Общая переплата"), 1, 2)
-        layout.addWidget(self.total_overpay, 1, 3)
-        layout.addWidget(QLabel("Общая сумма выплат"), 2, 2)
-        layout.addWidget(self.total_payment, 2, 3)
+        layout.addLayout(top_bar, 0, 0, 1, 4)
+
+        layout.addWidget(QLabel("Сумма кредита"), 1, 0)
+        layout.addWidget(self.amount_input, 1, 1)
+        layout.addWidget(QLabel("Срок кредита (лет)"), 2, 0)
+        layout.addWidget(self.term_input, 2, 1)
+        layout.addWidget(QLabel("Процентная ставка (%)"), 3, 0)
+        layout.addWidget(self.rate_input, 3, 1)
+        layout.addWidget(QLabel("Тип платежа"), 4, 0)
+        layout.addWidget(self.annuity_radio, 4, 1)
+        layout.addWidget(self.diff_radio, 5, 1)
+        layout.addWidget(self.calc_btn, 6, 0, 1, 2)
+        layout.addWidget(QLabel("Ежемесячный платёж"), 1, 2)
+        layout.addWidget(self.monthly_payment, 1, 3)
+        layout.addWidget(QLabel("Общая переплата"), 2, 2)
+        layout.addWidget(self.total_overpay, 2, 3)
+        layout.addWidget(QLabel("Общая сумма выплат"), 3, 2)
+        layout.addWidget(self.total_payment, 3, 3)
 
         self.setLayout(layout)
 
@@ -72,12 +85,37 @@ class MortgageCalculator(QWidget):
                 payment = payments[0]
 
             overpay = total - principal
-            self.monthly_payment.setText(f"{payment:,.2f}")
-            self.total_overpay.setText(f"{overpay:,.2f}")
-            self.total_payment.setText(f"{total:,.2f}")
+            self.monthly_payment.setText(f"{payment:,.2f}".replace(',', ' '))
+            self.total_overpay.setText(f"{overpay:,.2f}".replace(',', ' '))
+            self.total_payment.setText(f"{total:,.2f}".replace(',', ' '))
 
         except ValueError:
             self.monthly_payment.setText("Ошибка ввода")
+            self.total_overpay.clear()
+            self.total_payment.clear()
+
+    def toggle_theme(self):
+        if self.dark_mode:
+            self.apply_light_theme()
+        else:
+            self.apply_dark_theme()
+        self.dark_mode = not self.dark_mode
+
+    def apply_dark_theme(self):
+        dark_palette = QPalette()
+        dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+
+        self.theme_btn.setText("☀️")
+        QApplication.instance().setPalette(dark_palette)
+
+    def apply_light_theme(self):
+        QApplication.instance().setPalette(QApplication.instance().style().standardPalette())
+        self.theme_btn.setText("🌙")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
