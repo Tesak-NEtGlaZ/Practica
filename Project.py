@@ -1,0 +1,232 @@
+import sys
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QLabel, QLineEdit, QPushButton, QRadioButton,
+    QGridLayout, QHBoxLayout
+)
+from PyQt6.QtGui import QPalette, QColor
+from PyQt6.QtCore import Qt
+import os
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+
+class MortgageCalculator(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Ипотечный калькулятор")
+        self.setFixedSize(600, 400)
+        self.dark_mode = False  # флаг текущей темы
+
+        self.init_ui()
+        self.apply_light_theme()
+
+    def init_ui(self):
+        # Поля ввода
+        self.amount_input = QLineEdit()
+        self.term_input = QLineEdit()
+        self.rate_input = QLineEdit()
+
+        # Радиокнопки
+        self.annuity_radio = QRadioButton("Аннуитетный")
+        self.diff_radio = QRadioButton("Дифференцированный")
+
+        # Поля вывода (только для чтения)
+        self.monthly_payment = QLineEdit()
+        self.total_overpay = QLineEdit()
+        self.total_payment = QLineEdit()
+        for field in [self.monthly_payment, self.total_overpay, self.total_payment]:
+            field.setReadOnly(True)
+
+        # Кнопки
+        self.calc_btn = QPushButton("Рассчитать")
+        self.pdf_btn = QPushButton("Сохранить в PDF")
+        self.theme_btn = QPushButton("🌙")  # кнопка смены темы
+        self.theme_btn.setFixedSize(30, 30)
+        self.theme_btn.clicked.connect(self.toggle_theme)
+
+        self.calc_btn.clicked.connect(self.calculate)
+        self.pdf_btn.clicked.connect(self.save_to_pdf)
+
+        # Верхняя панель
+        top_bar = QHBoxLayout()
+        top_bar.addStretch()
+        top_bar.addWidget(self.theme_btn)
+
+        # Сетка
+        layout = QGridLayout()
+        layout.addLayout(top_bar, 0, 0, 1, 4)
+
+        layout.addWidget(QLabel("Сумма кредита"), 1, 0)
+        layout.addWidget(self.amount_input, 1, 1)
+
+        layout.addWidget(QLabel("Срок кредита (лет)"), 2, 0)
+        layout.addWidget(self.term_input, 2, 1)
+
+        layout.addWidget(QLabel("Процентная ставка (%)"), 3, 0)
+        layout.addWidget(self.rate_input, 3, 1)
+
+        layout.addWidget(QLabel("Тип платежа"), 4, 0)
+        layout.addWidget(self.annuity_radio, 4, 1)
+        layout.addWidget(self.diff_radio, 5, 1)
+
+        layout.addWidget(self.calc_btn, 6, 0)
+        layout.addWidget(self.pdf_btn, 6, 1)
+
+        layout.addWidget(QLabel("Ежемесячный платёж"), 1, 2)
+        layout.addWidget(self.monthly_payment, 1, 3)
+
+        layout.addWidget(QLabel("Общая переплата"), 2, 2)
+        layout.addWidget(self.total_overpay, 2, 3)
+
+        layout.addWidget(QLabel("Общая сумма выплат"), 3, 2)
+        layout.addWidget(self.total_payment, 3, 3)
+
+        self.setLayout(layout)
+
+    def calculate(self):
+        """Расчёт ипотеки"""
+        try:
+            principal = float(self.amount_input.text())
+            years = float(self.term_input.text())
+            rate = float(self.rate_input.text()) / 100
+            months = int(years * 12)
+
+            if self.annuity_radio.isChecked():
+                monthly_rate = rate / 12
+                payment = principal * (monthly_rate * (1 + monthly_rate) ** months) / \
+                          ((1 + monthly_rate) ** months - 1)
+                total = payment * months
+            elif self.diff_radio.isChecked():
+                payments = []
+                for m in range(months):
+                    principal_part = principal / months
+                    interest_part = (principal - principal * m / months) * rate / 12
+                    payments.append(principal_part + interest_part)
+                total = sum(payments)
+                payment = payments[0]
+            else:
+                self.monthly_payment.setText("Выберите тип")
+                return
+
+            overpay = total - principal
+            self.monthly_payment.setText(f"{payment:,.2f}".replace(',', ' '))
+            self.total_overpay.setText(f"{overpay:,.2f}".replace(',', ' '))
+            self.total_payment.setText(f"{total:,.2f}".replace(',', ' '))
+
+        except ValueError:
+            self.monthly_payment.setText("Ошибка ввода")
+            self.total_overpay.clear()
+            self.total_payment.clear()
+
+    def _resource_path(rel_path: str) -> str:
+        """Возвращает корректный путь к ресурсу как в dev, так и в PyInstaller onefile."""
+        base = getattr(sys, "_MEIPASS", os.path.dirname(__file__))
+        return os.path.join(base, rel_path)
+
+    def save_to_pdf(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить как PDF", "", "PDF Files (*.pdf)"
+        )
+        if not filename:
+            return
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
+
+        # Найти шрифт: сначала ищем рядом с приложением (works with PyInstaller),
+        # затем пробуем несколько стандартных путей
+        base = getattr(sys, '_MEIPASS', os.path.dirname(__file__))  # support PyInstaller
+        candidates = [
+            os.path.join(base, "DejaVuSans.ttf"),
+            os.path.join(base, "fonts", "DejaVuSans.ttf"),
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # linux
+            "/usr/local/share/fonts/DejaVuSans.ttf",
+            "C:\\Windows\\Fonts\\arial.ttf",  # windows fallback
+            "/Library/Fonts/Arial Unicode.ttf",  # mac fallback
+        ]
+
+        font_path = None
+        for p in candidates:
+            if p and os.path.exists(p):
+                font_path = p
+                break
+
+        if font_path is None:
+            QMessageBox.critical(self, "Ошибка", "Не найден TTF-шрифт для кириллицы.\n"
+                                                 "Поместите DejaVuSans.ttf рядом с программой или установите один из системных шрифтов.")
+            return
+
+        try:
+            # Регистрация TTF шрифта под именем 'DejaVuSans'
+            pdfmetrics.registerFont(TTFont("DejaVuSans", font_path))
+
+            c = canvas.Canvas(filename, pagesize=A4)
+            width, height = A4
+
+            # Заголовок
+            c.setFont("DejaVuSans", 16)
+            c.drawString(100, height - 50, "Результаты расчёта ипотеки")
+
+            # Основной текст
+            c.setFont("DejaVuSans", 12)
+            y = height - 90
+            line_height = 18
+
+            fields = [
+                ("Сумма кредита", self.amount_input.text()),
+                ("Срок кредита (лет)", self.term_input.text()),
+                ("Процентная ставка (%)", self.rate_input.text()),
+                ("Тип платежа", "Аннуитетный" if self.annuity_radio.isChecked() else "Дифференцированный"),
+                ("Ежемесячный платёж", self.monthly_payment.text()),
+                ("Общая переплата", self.total_overpay.text()),
+                ("Общая сумма выплат", self.total_payment.text()),
+            ]
+
+            for label, value in fields:
+                c.drawString(100, y, f"{label}: {value}")
+                y -= line_height
+                if y < 50:
+                    c.showPage()
+                    c.setFont("DejaVuSans", 12)
+                    y = height - 50
+
+            c.save()
+            QMessageBox.information(self, "Успех", f"PDF сохранён:\n{filename}")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка", f"Не удалось сохранить PDF:\n{e}")
+
+    def toggle_theme(self):
+        if self.dark_mode:
+            self.apply_light_theme()
+        else:
+            self.apply_dark_theme()
+        self.dark_mode = not self.dark_mode
+
+    def apply_dark_theme(self):
+        dark_palette = QPalette()
+        dark_palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Base, QColor(35, 35, 35))
+        dark_palette.setColor(QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Text, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.Button, QColor(53, 53, 53))
+        dark_palette.setColor(QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+        dark_palette.setColor(QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+
+        self.theme_btn.setText("☀️")
+        QApplication.instance().setPalette(dark_palette)
+
+    def apply_light_theme(self):
+        QApplication.instance().setPalette(QApplication.instance().style().standardPalette())
+        self.theme_btn.setText("🌙")
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MortgageCalculator()
+    window.show()
+    sys.exit(app.exec())
